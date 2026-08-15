@@ -1,0 +1,118 @@
+---
+- name: Deploy Forgejo on K3s
+  hosts: k3s_masters
+  become: yes
+  vars:
+    forgejo_namespace: git
+    forgejo_release_name: forgejo
+    forgejo_domain: "forgejo.grove.shire.one"
+    forgejo_admin_user: admin
+    forgejo_admin_email: "admin@fogserv.cloud"
+    
+  tasks:
+    - name: Create Forgejo namespace
+      k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ forgejo_namespace }}"
+
+    - name: Add Forgejo Helm repo
+      shell: helm repo add forgejo https://codeberg.org/helm-charts/forgejo
+      args:
+        creates: /root/.config/helm/forgejo
+
+    - name: Update Helm repos
+      shell: helm repo update
+
+    - name: Install Forgejo Helm chart
+      shell: |
+        helm install {{ forgejo_release_name }} forgejo/forgejo \
+          --namespace {{ forgejo_namespace }} \
+          --set service.type=ClusterIP \
+          --set ingress.enabled=true \
+          --set ingress.hosts[0].host={{ forgejo_domain }} \
+          --set ingress.ingressClassName=traefik \
+          --set persistence.enabled=true \
+          --set persistence.size=10Gi \
+          --set postgresql.enabled=true \
+          --set postgresql.auth.postgresPassword=fogserv-db-password \
+          --set postgresql.auth.database=forgejo \
+          --set admin.username={{ forgejo_admin_user }} \
+          --set admin.password=fogserv-admin-password \
+          --set admin.email={{ forgejo_admin_email }} \
+          --wait
+      args:
+        creates: /root/.config/helm/forgejo
+
+    - name: Wait for Forgejo deployment
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=forgejo -n {{ forgejo_namespace }} --timeout=300s
+
+    - name: Wait for PostgreSQL deployment
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=postgresql -n {{ forgejo_namespace }} --timeout=300s
+
+    - name: Create Forgejo access helper script
+      copy:
+        dest: /usr/local/bin/forgejo-access
+        content: |
+          #!/bin/bash
+          echo "Forgejo Access Information:"
+          echo "URL: https://{{ forgejo_domain }}"
+          echo "Admin User: {{ forgejo_admin_user }}"
+          echo "Admin Password: fogserv-admin-password (CHANGE THIS!)"
+          echo ""
+          echo "Port forward for local access:"
+          echo "kubectl port-forward svc/forgejo 3000:3000 -n {{ forgejo_namespace }}"
+        mode: '0755'
+
+    - name: Create Forgejo GitOps config directory
+      file:
+        path: /etc/forgejo/gitops
+        state: directory
+        mode: '0755'
+
+    - name: Create Forgejo configuration template
+      copy:
+        dest: /etc/forgejo/gitops/app.ini
+        content: |
+          ; Forgejo Configuration
+          ; This file is managed by GitOps - do not edit manually
+          
+          [database]
+          DB_TYPE = postgres
+          HOST = forgejo-postgresql.{{ forgejo_namespace }}.svc.cluster.local:5432
+          NAME = forgejo
+          USER = postgres
+          PASSWD = fogserv-db-password
+          
+          [repository]
+          ROOT = /data/git/repositories
+          
+          [service]
+          ENABLE_NOTIFY_MAIL = false
+          DISABLE_REGISTRATION = false
+          REQUIRE_SIGNIN_VIEW = false
+          
+          [security]
+          INSTALL_LOCK = true
+          SECRET_KEY = CHANGE_THIS_SECRET_KEY_IN_PRODUCTION
+          
+          [server]
+          DOMAIN = {{ forgejo_domain }}
+          HTTP_PORT = 3000
+          ROOT_URL = https://{{ forgejo_domain }}
+          PROTOCOL = https
+        mode: '0644'
+        force: no
+
+    - name: Display Forgejo access information
+      debug:
+        msg: |
+          Forgejo is deployed and running!
+          URL: https://{{ forgejo_domain }}
+          Admin User: {{ forgejo_admin_user }}
+          Admin Password: fogserv-admin-password (CHANGE THIS IN PRODUCTION!)
+          
+          Access helper: /usr/local/bin/forgejo-access

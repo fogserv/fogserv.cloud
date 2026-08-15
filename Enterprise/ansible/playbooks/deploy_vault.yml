@@ -1,0 +1,121 @@
+---
+- name: Deploy HashiCorp Vault on K3s
+  hosts: k3s_masters
+  become: yes
+  vars:
+    vault_namespace: infra
+    vault_release_name: vault
+    vault_chart_version: "0.26.0"
+    
+  tasks:
+    - name: Create Vault namespace
+      k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ vault_namespace }}"
+
+    - name: Add HashiCorp Helm repo
+      shell: helm repo add hashicorp https://helm.releases.hashicorp.com
+      args:
+        creates: /root/.config/helm/repositories.yaml
+
+    - name: Update Helm repos
+      shell: helm repo update
+
+    - name: Install Vault Helm chart
+      shell: |
+        helm install {{ vault_release_name }} hashicorp/vault \
+          --namespace {{ vault_namespace }} \
+          --version {{ vault_chart_version }} \
+          --set server.dev.enabled=true \
+          --set server.dev.rootToken=fogserv-bootstrap-token \
+          --set injector.enabled=true \
+          --wait
+      args:
+        creates: /root/.config/helm/vault
+
+    - name: Wait for Vault pod to be ready
+      shell: kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=vault -n {{ vault_namespace }} --timeout=300s
+
+    - name: Export Vault address
+      shell: kubectl get svc vault -n {{ vault_namespace }} -o jsonpath='{.spec.clusterIP}'
+      register: vault_address
+
+    - name: Create Vault config file
+      copy:
+        dest: /etc/vault/config.hcl
+        content: |
+          storage "file" {
+            path = "./vault/data"
+          }
+          
+          listener "tcp" {
+            address = "0.0.0.0:8200"
+            tls_disable = 1
+          }
+          
+          api_addr = "http://{{ vault_address.stdout }}:8200"
+          cluster_addr = "https://{{ ansible_hostname }}:8201"
+          
+          ui = true
+        mode: '0644'
+        force: no
+
+    - name: Create Vault systemd service
+      copy:
+        dest: /etc/systemd/system/vault.service
+        content: |
+          [Unit]
+          Description=HashiCorp Vault
+          After=network.target
+          
+          [Service]
+          User=root
+          ExecStart=/usr/local/bin/vault server -config=/etc/vault/config.hcl
+          Restart=always
+          Environment="VAULT_ADDR=http://127.0.0.1:8200"
+          
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+        force: no
+      when: false  # Disabled - using Helm deployment instead
+
+    - name: Enable and start Vault service
+      systemd:
+        name: vault
+        enabled: yes
+        state: started
+      when: false  # Disabled - using Helm deployment instead
+
+    - name: Store Vault unseal keys in secure location
+      copy:
+        dest: /root/.vault-unseal-keys
+        content: |
+          # IMPORTANT: Store these keys securely offline
+          # These are needed to unseal Vault after restarts
+          # TODO: Run vault operator unseal and store keys here
+        mode: '0600'
+        force: no
+      when: false
+
+    - name: Create Vault access helper script
+      copy:
+        dest: /usr/local/bin/vault-access
+        content: |
+          #!/bin/bash
+          export VAULT_ADDR="http://$(kubectl get svc vault -n {{ vault_namespace }} -o jsonpath='{.spec.clusterIP}'):8200"
+          export VAULT_TOKEN="fogserv-bootstrap-token"
+          vault status
+        mode: '0755'
+
+    - name: Display Vault access information
+      debug:
+        msg: |
+          Vault is deployed and running!
+          Access with: kubectl port-forward svc/vault 8200:8200 -n {{ vault_namespace }}
+          Token: fogserv-bootstrap-token (CHANGE THIS IN PRODUCTION!)
+          Unseal keys are stored in /root/.vault-unseal-keys

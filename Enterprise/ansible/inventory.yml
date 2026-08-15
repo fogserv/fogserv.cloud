@@ -1,0 +1,27 @@
+---
+all:
+  children:
+    k3s_masters:
+      hosts:
+        # Primary bootstrap node - will host Forgejo, Vault, AI Agent
+        grove:
+          ansible_host: grove.shire.one
+          ansible_user: admin
+          ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+          node_type: master
+          role: bootstrap
+          # Future: Add specific resource allocations
+          # cpu_limit: 4
+          # memory_limit: 8G
+          # storage_limit: 100G
+
+    k3s_workers:
+      hosts:
+        # Future worker nodes can be added here
+        # worker1:
+        #   ansible_host: worker1.shire.one
+        #   ansible_user: admin
+        #   ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+        #   node_type: worker
+        pass
+

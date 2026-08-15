@@ -1,0 +1,61 @@
+---
+- name: Deploy AI Agent on K3s
+  hosts: k3s_masters
+  become: yes
+  vars:
+    ai_agent_namespace: ai
+    ai_agent_release_name: ai-admin
+    ai_agent_port: 3001
+    ai_agent_log_level: info
+    ai_agent_source_dir: /opt/ai-agent
+    ai_agent_registry: localhost:5000
+    ai_agent_image_tag: "{{ ai_agent_registry }}/fogserv/ai-agent:latest"
+    
+  tasks:
+    - name: Create AI Agent namespace
+      k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ ai_agent_namespace }}"
+
+    - name: Create AI Agent source directory
+      file:
+        path: "{{ ai_agent_source_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Deploy AI Agent source code from local
+      copy:
+        src: ../apps/ai-agent/
+        dest: "{{ ai_agent_source_dir }}/"
+        mode: '0644'
+        directory_mode: '0755'
+      ignore_errors: yes
+
+    - name: Install Bun on target node
+      shell: |
+        curl -fsSL https://bun.sh/install | bash
+        echo 'export BUN_INSTALL="$HOME/.bun"' >> ~/.bashrc
+        echo 'export PATH="$BUN_INSTALL/bin:$PATH"' >> ~/.bashrc
+        source ~/.bashrc
+      args:
+        creates: ~/.bun/bin/bun
+
+    - name: Build AI Agent image locally
+      shell: |
+        cd {{ ai_agent_source_dir }}
+        source ~/.bashrc
+        bun install
+        docker build -t {{ ai_agent_image_tag }} .
+      args:
+        creates: /var/lib/docker/overlay2/{{ ai_agent_image_tag | hash('md5') }}/init
+      when: false  # Only run if Docker is available
+    - name: Create AI Agent config directory
+      file:
+        path: /etc/ai-agent
+        state: directory
+        mode: '0755'
+

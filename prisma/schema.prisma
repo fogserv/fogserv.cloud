@@ -1,0 +1,455 @@
+// fogserv.cloud CRM/CMS Database Schema
+// Ghost-like content management + email marketing + subscriber management
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "sqlite"
+}
+// ============================================================================
+// USER MANAGEMENT & AUTHENTICATION
+// ============================================================================
+
+enum UserRole {
+  OWNER       // Full system access
+  ADMIN       // Content & user management
+  EDITOR      // Content creation & editing
+  AUTHOR      // Content creation only
+  CONTRIBUTOR // Draft submissions only
+  SUBSCRIBER  // Read-only access
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+model User {
+  id           String      @id @default(cuid())
+  email        String      @unique
+  name         String?
+  bio          String?
+  avatar       String?     // URL to profile image
+  website      String?
+  location     String?
+  role         UserRole    @default(AUTHOR)
+  status       UserStatus  @default(PENDING_VERIFICATION)
+  
+  // Authentication
+  passwordHash String?
+  emailVerified DateTime?
+  lastLoginAt  DateTime?
+  
+  // Metadata
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  
+  // Relations
+  posts        Post[]      @relation("PostAuthor")
+  comments     Comment[]
+  sessions     Session[]
+  
+  @@index([email])
+  @@index([role])
+  @@index([status])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  @@index([userId])
+  @@index([token])
+}
+
+// ============================================================================
+// CONTENT MANAGEMENT (Ghost-like CMS)
+// ============================================================================
+
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  SCHEDULED
+  ARCHIVED
+}
+
+enum PostType {
+  POST      // Blog post
+  PAGE      // Static page
+  SNIPPET   // Code snippet
+  GUIDE     // Long-form guide
+}
+
+model Post {
+  id              String      @id @default(cuid())
+  title           String
+  slug            String      @unique
+  excerpt         String?     // Meta description / preview text
+  content         String      // Full markdown/HTML content
+  featureImage    String?     // Hero image URL
+  
+  // Publishing
+  type            PostType    @default(POST)
+  status          PostStatus  @default(DRAFT)
+  publishedAt     DateTime?
+  scheduledFor    DateTime?
+  
+  // SEO & Metadata
+  metaTitle       String?
+  metaDescription String?
+  ogImage         String?     // Open Graph image
+  canonicalUrl    String?
+  
+  // Analytics
+  viewCount       Int         @default(0)
+  readingTime     Int?        // Estimated minutes
+  
+  // Author & Timestamps
+  authorId        String
+  author          User        @relation("PostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  
+  // Relations
+  tags            PostTag[]
+  categories      PostCategory[]
+  comments        Comment[]
+  
+  @@index([slug])
+  @@index([status])
+  @@index([type])
+  @@index([authorId])
+  @@index([publishedAt])
+}
+
+model Tag {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  slug        String    @unique
+  description String?
+  color       String?   // Hex color for UI
+  createdAt   DateTime  @default(now())
+  
+  posts       PostTag[]
+  
+  @@index([slug])
+}
+
+model Category {
+  id          String         @id @default(cuid())
+  name        String         @unique
+  slug        String         @unique
+  description String?
+  icon        String?        // Icon name or emoji
+  parentId    String?
+  parent      Category?      @relation("CategoryHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Category[]     @relation("CategoryHierarchy")
+  createdAt   DateTime       @default(now())
+  
+  posts       PostCategory[]
+  
+  @@index([slug])
+  @@index([parentId])
+}
+
+// Junction tables for many-to-many relationships
+model PostTag {
+  postId    String
+  tagId     String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  
+  @@id([postId, tagId])
+  @@index([postId])
+  @@index([tagId])
+}
+
+model PostCategory {
+  postId     String
+  categoryId String
+  post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  
+  @@id([postId, categoryId])
+  @@index([postId])
+  @@index([categoryId])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  content   String
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  
+  // Guest comments (no account required)
+  guestName  String?
+  guestEmail String?
+  
+  // Moderation
+  approved   Boolean  @default(false)
+  spam       Boolean  @default(false)
+  
+  // Threading
+  parentId   String?
+  parent     Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies    Comment[] @relation("CommentReplies")
+  
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  @@index([postId])
+  @@index([authorId])
+  @@index([parentId])
+  @@index([approved])
+}
+
+// ============================================================================
+// EMAIL MARKETING & SUBSCRIBER MANAGEMENT
+// ============================================================================
+
+enum SubscriberStatus {
+  PENDING       // Awaiting double opt-in confirmation
+  ACTIVE        // Confirmed and subscribed
+  UNSUBSCRIBED  // Opted out
+  BOUNCED       // Email bounced
+  COMPLAINED    // Marked as spam
+}
+
+model Subscriber {
+  id              String            @id @default(cuid())
+  email           String            @unique
+  name            String?
+  status          SubscriberStatus  @default(PENDING)
+  
+  // Double opt-in
+  confirmToken    String?           @unique
+  confirmedAt     DateTime?
+  
+  // Preferences
+  tags            SubscriberTag[]
+  lists           SubscriberList[]
+  
+  // Tracking
+  source          String?           // Where they signed up (footer, popup, etc)
+  ipAddress       String?
+  userAgent       String?
+  
+  // Engagement
+  emailsSent      Int               @default(0)
+  emailsOpened    Int               @default(0)
+  linksClicked    Int               @default(0)
+  lastOpenedAt    DateTime?
+  lastClickedAt   DateTime?
+  
+  // Timestamps
+  subscribedAt    DateTime          @default(now())
+  unsubscribedAt  DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  
+  // Relations
+  campaignLogs    CampaignLog[]
+  
+  @@index([email])
+  @@index([status])
+  @@index([subscribedAt])
+}
+
+model EmailList {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  description String?
+  isPublic    Boolean          @default(true)  // Can users subscribe directly?
+  createdAt   DateTime         @default(now())
+  
+  subscribers SubscriberList[]
+  campaigns   Campaign[]
+  
+  @@index([name])
+}
+
+model SubscriberList {
+  subscriberId String
+  listId       String
+  subscriber   Subscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  list         EmailList  @relation(fields: [listId], references: [id], onDelete: Cascade)
+  subscribedAt DateTime   @default(now())
+  
+  @@id([subscriberId, listId])
+  @@index([subscriberId])
+  @@index([listId])
+}
+
+model SubscriberTag {
+  subscriberId String
+  tagName      String
+  subscriber   Subscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+  
+  @@id([subscriberId, tagName])
+  @@index([subscriberId])
+  @@index([tagName])
+}
+
+// ============================================================================
+// EMAIL CAMPAIGNS (Mailgun Integration)
+// ============================================================================
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  PAUSED
+  CANCELLED
+}
+
+model Campaign {
+  id           String         @id @default(cuid())
+  name         String
+  subject      String
+  preheader    String?        // Preview text
+  
+  // Content
+  htmlContent  String         // Full HTML email
+  textContent  String?        // Plain text fallback
+  templateId   String?
+  template     EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  
+  // Targeting
+  listIds      EmailList[]
+  segmentQuery String?        // JSON query for dynamic segmentation
+  
+  // Sending
+  status       CampaignStatus @default(DRAFT)
+  scheduledFor DateTime?
+  sentAt       DateTime?
+  
+  // Mailgun
+  mailgunId    String?        @unique
+  fromName     String         @default("fogserv.cloud")
+  fromEmail    String         @default("noreply@fogserv.cloud")
+  replyTo      String?
+  
+  // Analytics
+  totalRecipients Int         @default(0)
+  delivered       Int         @default(0)
+  opened          Int         @default(0)
+  clicked         Int         @default(0)
+  bounced         Int         @default(0)
+  complained      Int         @default(0)
+  unsubscribed    Int         @default(0)
+  
+  // Timestamps
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  
+  // Relations
+  logs         CampaignLog[]
+  
+  @@index([status])
+  @@index([scheduledFor])
+  @@index([mailgunId])
+}
+
+model CampaignLog {
+  id           String     @id @default(cuid())
+  campaignId   String
+  campaign     Campaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  subscriberId String
+  subscriber   Subscriber @relation(fields: [subscriberId], references: [id], onDelete: Cascade)
+  
+  // Events
+  sent         Boolean    @default(false)
+  delivered    Boolean    @default(false)
+  opened       Boolean    @default(false)
+  clicked      Boolean    @default(false)
+  bounced      Boolean    @default(false)
+  complained   Boolean    @default(false)
+  unsubscribed Boolean    @default(false)
+  
+  // Event timestamps
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  openedAt       DateTime?
+  clickedAt      DateTime?
+  bouncedAt      DateTime?
+  complainedAt   DateTime?
+  unsubscribedAt DateTime?
+  
+  // Error tracking
+  errorMessage   String?
+  bounceType     String?  // hard, soft, etc
+  
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  
+  @@index([campaignId])
+  @@index([subscriberId])
+  @@index([sent])
+  @@index([opened])
+}
+
+model EmailTemplate {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  description String?
+  subject     String
+  htmlContent String
+  textContent String?
+  
+  // Variables/placeholders used in template
+  variables   String?    // JSON array of variable names
+  
+  // Usage
+  isDefault   Boolean    @default(false)
+  campaigns   Campaign[]
+  
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  
+  @@index([name])
+}
+
+// ============================================================================
+// ANALYTICS & TRACKING
+// ============================================================================
+
+model PageView {
+  id         String   @id @default(cuid())
+  path       String
+  referrer   String?
+  userAgent  String?
+  ipAddress  String?
+  country    String?
+  timestamp  DateTime @default(now())
+  
+  @@index([path])
+  @@index([timestamp])
+}
+
+model LinkClick {
+  id           String   @id @default(cuid())
+  url          String
+  campaignId   String?
+  subscriberId String?
+  ipAddress    String?
+  userAgent    String?
+  timestamp    DateTime @default(now())
+  
+  @@index([url])
+  @@index([campaignId])
+  @@index([timestamp])
+}

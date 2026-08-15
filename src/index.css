@@ -1,0 +1,293 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+ --color-primary: var(--color-primary);
+ --color-primary-hover: var(--color-primary-hover);
+ --color-primary-light: var(--color-primary-light);
+ 
+ --color-secondary: var(--color-secondary);
+ --color-secondary-hover: var(--color-secondary-hover);
+ --color-secondary-light: var(--color-secondary-light);
+ 
+ --color-accent-tan: var(--color-accent-tan);
+ --color-accent-tan-hover: var(--color-accent-tan-hover);
+ --color-accent-tan-light: var(--color-accent-tan-light);
+ 
+ --color-accent-terracotta: var(--color-accent-terracotta);
+ --color-accent-terracotta-hover: var(--color-accent-terracotta-hover);
+ --color-accent-terracotta-light: var(--color-accent-terracotta-light);
+ 
+ --color-background: var(--color-secondary);
+ --color-foreground: #ffffff;
+ --color-muted: var(--color-secondary-hover);
+ --color-muted-foreground: var(--color-accent-tan-light);
+ --color-border: var(--color-secondary-light);
+ 
+ --color-focus-ring: var(--color-focus-ring);
+}
+
+:root {
+ /* Brand Colors - fogserv.cloud */
+ --color-primary: #39918C;
+ --color-primary-hover: #2d7571;
+ --color-primary-light: #4aa8a2;
+
+ --color-secondary: #2F435A;
+ --color-secondary-hover: #243548;
+ --color-secondary-light: #3d5673;
+
+ --color-accent-tan: #D0B49F;
+ --color-accent-tan-hover: #c4a48c;
+ --color-accent-tan-light: #e0c9b8;
+
+ --color-accent-terracotta: #AB6B51;
+ --color-accent-terracotta-hover: #955c45;
+ --color-accent-terracotta-light: #c07d62;
+
+ /* Semantic Colors */
+ --color-background: #2F435A;
+ --color-foreground: #ffffff;
+ --color-muted: #243548;
+ --color-muted-foreground: #e0c9b8;
+ --color-border: #3d5673;
+
+ /* Focus ring for accessibility */
+ --color-focus-ring: var(--color-primary);
+
+ /* Layout Variables */
+ --kb-header-offset: 6.25rem;
+ --kb-sidebar-expanded-width: 20.5rem;
+ --kb-sidebar-collapsed-width: 4rem;
+}
+
+* {
+ @apply transition-colors duration-200;
+}
+
+html, body, #root {
+ @apply w-full h-full;
+}
+
+html {
+ scrollbar-width: thin;
+ scrollbar-color: rgba(129, 140, 248, 0.85) rgba(15, 23, 42, 0.72);
+}
+
+body {
+ background-color: var(--color-background);
+ color: var(--color-foreground);
+}
+
+body::-webkit-scrollbar {
+ width: 12px;
+}
+
+body::-webkit-scrollbar-track {
+ background: rgba(15, 23, 42, 0.72);
+}
+
+body::-webkit-scrollbar-thumb {
+ background: linear-gradient(180deg, rgba(129, 140, 248, 0.85), rgba(99, 102, 241, 0.7));
+ border-radius: 999px;
+ border: 2px solid rgba(15, 23, 42, 0.72);
+}
+
+.kb-layout-shell {
+ @apply w-full overflow-x-hidden;
+}
+
+
+.kb-layout-grid {
+ @apply lg:block;
+}
+
+.kb-content-panel {
+ @apply min-w-0;
+ transition: margin-left 220ms ease;
+}
+
+.kb-markdown {
+ @apply text-foreground leading-relaxed;
+ overflow-wrap: anywhere;
+ word-break: break-word;
+}
+
+.kb-markdown h1 {
+ @apply text-3xl font-bold text-foreground mt-8 mb-4;
+}
+
+.kb-markdown h2 {
+ @apply text-2xl font-bold text-foreground mt-8 mb-3;
+}
+
+.kb-markdown h3 {
+ @apply text-xl font-semibold text-foreground mt-6 mb-3;
+}
+
+.kb-markdown p {
+ @apply mb-4;
+}
+
+.kb-markdown ul {
+ @apply list-disc pl-6 mb-4;
+}
+
+.kb-markdown ol {
+ @apply list-decimal pl-6 mb-4;
+}
+
+.kb-markdown li {
+ @apply mb-2;
+}
+
+.kb-markdown table {
+ @apply w-full border-collapse mb-6 text-sm block overflow-x-auto;
+}
+
+.kb-markdown pre,
+.kb-markdown code,
+.kb-markdown img,
+.kb-markdown video,
+.kb-markdown iframe {
+ max-width: 100%;
+}
+
+.kb-markdown pre {
+ @apply overflow-x-auto;
+}
+
+.kb-markdown h1,
+.kb-markdown h2,
+.kb-markdown h3,
+.kb-markdown h4,
+.kb-markdown h5,
+.kb-markdown h6 {
+ scroll-margin-top: 7rem;
+}
+
+.kb-markdown th {
+ @apply border border-border bg-background px-3 py-2 text-left text-foreground;
+}
+
+.kb-markdown td {
+ @apply border border-border px-3 py-2;
+}
+
+.kb-markdown blockquote {
+ @apply border-l-4 border-border pl-4 italic text-muted-foreground my-4;
+}
+
+.kb-markdown hr {
+ @apply border-border my-8;
+}
+
+.kb-hub-card {
+ background-image:
+ radial-gradient(1000px 240px at 0% 0%, rgba(56, 189, 248, 0.08), transparent 65%),
+ linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(17, 24, 39, 0.95));
+}
+
+.kb-sidebar {
+ @apply rounded-xl border border-primary/20 p-5 backdrop-blur;
+ background-image:
+ radial-gradient(700px 240px at 0% 0%, rgba(99, 102, 241, 0.14), transparent 65%),
+ linear-gradient(160deg, rgba(15, 23, 42, 0.92), rgba(17, 24, 39, 0.88));
+}
+
+.kb-sidebar-toggle {
+ @apply items-center justify-center text-xs font-bold tracking-wider text-foreground;
+ position: absolute;
+ right: -0.9rem;
+ top: 1rem;
+ width: 2rem;
+ height: 2rem;
+ border-radius: 999px;
+ border: 1px solid rgba(129, 140, 248, 0.5);
+ background: linear-gradient(180deg, rgba(79, 70, 229, 0.95), rgba(67, 56, 202, 0.9));
+ box-shadow: 0 6px 24px rgba(30, 41, 59, 0.45);
+ z-index: 60;
+}
+
+.kb-sidebar-toggle:hover {
+ background: linear-gradient(180deg, rgba(99, 102, 241, 0.96), rgba(79, 70, 229, 0.92));
+}
+
+@media (min-width: 1024px) {
+ .kb-sidebar-fixed {
+ position: fixed;
+ left: 0;
+ top: var(--kb-header-offset);
+ bottom: 0;
+ width: var(--kb-sidebar-expanded-width);
+ border-radius: 0 1rem 1rem 0;
+ border-left: 0;
+ z-index: 30;
+ overflow: visible;
+ }
+
+ .kb-sidebar-collapsed {
+ width: var(--kb-sidebar-collapsed-width);
+ padding: 0.75rem;
+ }
+}
+
+.kb-sidebar-scroll {
+ @apply overflow-y-auto;
+ max-height: calc(100vh - var(--kb-header-offset) - 5rem);
+ scrollbar-width: thin;
+ scrollbar-color: rgba(129, 140, 248, 0.85) rgba(15, 23, 42, 0.72);
+}
+
+.kb-sidebar-scroll::-webkit-scrollbar {
+ width: 10px;
+}
+
+.kb-sidebar-scroll::-webkit-scrollbar-track {
+ background: rgba(15, 23, 42, 0.55);
+ border-radius: 999px;
+}
+
+.kb-sidebar-scroll::-webkit-scrollbar-thumb {
+ background: linear-gradient(180deg, rgba(129, 140, 248, 0.8), rgba(99, 102, 241, 0.6));
+ border-radius: 999px;
+ border: 2px solid rgba(15, 23, 42, 0.65);
+}
+
+/* TipTap editor styling */
+.tiptap-editor .ProseMirror {
+ min-height: 320px;
+ outline: none;
+}
+
+.tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+ content: attr(data-placeholder);
+ color: rgb(107 114 128);
+ float: left;
+ height: 0;
+ pointer-events: none;
+}
+
+.tiptap-editor .ProseMirror h1,
+.tiptap-editor .ProseMirror h2,
+.tiptap-editor .ProseMirror h3,
+.tiptap-editor .ProseMirror h4,
+.tiptap-editor .ProseMirror h5,
+.tiptap-editor .ProseMirror h6 {
+ margin-top: 0.6em;
+ margin-bottom: 0.4em;
+ color: rgb(255 255 255);
+}
+
+.tiptap-editor .ProseMirror a {
+ color: rgb(167 139 250);
+ text-decoration: underline;
+}
+
+.tiptap-editor .ProseMirror pre {
+ background: rgb(15 23 42);
+ border: 1px solid rgb(51 65 85);
+ border-radius: 0.5rem;
+ padding: 0.75rem;
+ overflow-x: auto;
+}

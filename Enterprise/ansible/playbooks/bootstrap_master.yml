@@ -1,0 +1,38 @@
+---
+- name: Bootstrap K3s Control Plane
+  hosts: k3s_masters
+  become: yes
+  tasks:
+    - name: Ensure target prerequisites are installed
+      apt:
+        name:
+          - curl
+          - open-iscsi
+          - nfs-common
+          - util-linux
+          - git
+        state: present
+        update_cache: yes
+
+    - name: Enable iscsid for Longhorn support
+      systemd:
+        name: iscsid
+        enabled: yes
+        state: started
+
+    - name: Download k3s install script
+      get_url:
+        url: https://get.k3s.io
+        dest: /tmp/k3s_install.sh
+        mode: "0755"
+
+    - name: Run K3s server installation with permissive components
+      command: >
+        /tmp/k3s_install.sh server
+        --write-kubeconfig-mode 644
+        --kubelet-arg "v=2"
+      args:
+        creates: /usr/local/bin/k3s
+
+    - name: Wait for K3s node to be ready
+      command: k3s kubectl wait --for=condition=Ready nodes --all --timeout=600s

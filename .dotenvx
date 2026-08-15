@@ -1,0 +1,8 @@
+{
+  "production": {
+    "encrypted": false
+  },
+  "development": {
+    "encrypted": false
+  }
+}

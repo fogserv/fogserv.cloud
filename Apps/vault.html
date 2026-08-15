@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Password Vault</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Crypto-JS is required for MD5, SHA256, and AES encryption -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+    <!-- otpauth is used for TOTP generation -->
+    <script src="https://cdn.jsdelivr.net/npm/otpauth@9.2.1/dist/otpauth.umd.min.js"></script>
+    <!-- Jdenticon is used for the visual password hash -->
+    <script src="https://cdn.jsdelivr.net/npm/jdenticon@3.2.0/dist/jdenticon.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .form-control:focus {
+            box-shadow: 0 0 0 2px #3b82f680;
+            border-color: #3b82f6;
+        }
+        .fab {
+            position: fixed;
+            bottom: 4rem;
+            right: 2rem;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0,0,0,0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        .progress-bar {
+            transition: width 1s linear;
+        }
+        .tab-btn.active {
+            border-color: #3b82f6;
+            color: #eff6ff;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 min-h-screen p-4 transition-colors duration-500">
+
+    <!-- Unlock Screen -->
+    <div id="unlock-screen" class="flex items-center justify-center min-h-screen">
+        <div class="w-full max-w-sm bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8">
+            <div class="flex justify-center items-center gap-2 mb-2">
+                <h1 class="text-3xl font-bold text-white text-center">Unlock Vault</h1>
+                <button type="button" id="unlock-info-btn" class="text-gray-400 hover:text-white transition rounded-full hover:bg-gray-700 p-1 mt-1" title="How it works">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                </button>
+            </div>
+            
+            <div class="flex justify-center items-center my-4 h-[100px] w-[100px] mx-auto">
+                <svg id="password-key" xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-gray-600">
+                    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path>
+                </svg>
+                <canvas id="password-identicon" width="100" height="100" class="bg-gray-700 rounded-lg hidden"></canvas>
+            </div>
+
+            <form id="unlock-form" class="space-y-4">
+                <div>
+                    <label for="unlock-master-password" class="block text-sm font-medium text-gray-300 mb-1">Master Password</label>
+                    <input type="password" id="unlock-master-password" required class="form-control bg-gray-700 border border-gray-600 text-white w-full rounded-lg px-4 py-2 focus:outline-none transition">
+                </div>
+                 <p id="unlock-error" class="text-red-400 text-sm text-center hidden">Invalid Master Password.</p>
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition">Unlock</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main App Screen -->
+    <div id="main-app" class="hidden container mx-auto max-w-6xl">
+        <header class="flex justify-between items-center mb-6">
+             <div class="flex items-center gap-2">
+                <h1 class="text-2xl md:text-3xl font-bold text-white">Password Vault</h1>
+                <button id="info-icon" class="text-gray-400 hover:text-white transition" aria-label="About this generator">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                </button>
+            </div>
+            <button id="lock-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition">Lock</button>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Password Generator Section -->
+            <section id="password-generator-section" class="bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8">
+                <h2 class="text-2xl font-bold text-white mb-6">Password Generator</h2>
+                <form id="password-form" class="space-y-6">
+                    <div>
+                        <label for="domain" class="block text-sm font-medium text-gray-300 mb-1">Domain or Service</label>
+                        <input type="text" id="domain" required placeholder="e.g., google.com" class="form-control bg-gray-700 border border-gray-600 text-white w-full rounded-lg px-4 py-2 focus:outline-none transition">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label for="length" class="block text-sm font-medium text-gray-300 mb-1">Length</label>
+                            <input type="number" id="length" value="10" min="8" max="64" class="form-control bg-gray-700 border border-gray-600 text-white w-full rounded-lg px-4 py-2 focus:outline-none transition">
+                        </div>
+                        <div>
+                            <label for="algorithm" class="block text-sm font-medium text-gray-300 mb-1">Algorithm</label>
+                            <select id="algorithm" class="form-control bg-gray-700 border border-gray-600 text-white w-full rounded-lg px-4 py-2 focus:outline-none transition appearance-none" style="background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fs vg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%239CA3AF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E'); background-repeat: no-repeat; background-position: right .7rem center; background-size: .65em auto;">
+                                <option value="md5" selected>MD5</option>
+                                <option value="sha512">SHA-512</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit" id="generate-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition">Generate Password</button>
+                </form>
+                <div id="result-container" class="mt-6 hidden">
+                    <label class="block text-sm font-medium text-gray-300 mb-1">Generated Password</label>
+                    <div class="relative"><input readonly id="result" class="w-full bg-gray-900 text-white font-mono rounded-lg pl-4 pr-12 py-3 text-center tracking-wider"><button id="copy-btn" class="absolute inset-y-0 right-0 flex items-center px-4 text-gray-400 hover:text-white transition group"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg><span id="copy-tooltip" class="absolute -top-10 right-0 bg-gray-900 text-white text-xs rounded-md px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity">Copy</span></button></div>
+                </div>
+            </section>
+
+            <!-- Right side with Tabs -->
+            <section class="bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8">
+                <div class="flex border-b border-gray-700 mb-4">
+                    <button id="show-totp-tab" class="tab-btn active font-semibold py-2 px-4 border-b-2 border-transparent text-gray-400 hover:text-white transition">Authenticator</button>
+                    <button id="show-logins-tab" class="tab-btn font-semibold py-2 px-4 border-b-2 border-transparent text-gray-400 hover:text-white transition">Logins</button>
+                    <button id="show-secrets-tab" class="tab-btn font-semibold py-2 px-4 border-b-2 border-transparent text-gray-400 hover:text-white transition">.secrets</button>
+                </div>
+
+                <!-- TOTP Section -->
+                <div id="totp-section">
+                    <div class="flex justify-between items-center mb-2">
+                        <h2 class="text-2xl font-bold text-white">Authenticator (TOTP)</h2>
+                        <button id="add-totp-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition">+ Add</button>
+                    </div>
+                    <!-- Global TOTP Timer -->
+                    <div id="global-totp-timer" class="w-full bg-gray-600 rounded-full h-1.5 mb-6 hidden">
+                        <div id="global-totp-progress" class="bg-cyan-500 h-1.5 rounded-full progress-bar" style="width: 100%"></div>
+                    </div>
+                    <div id="totp-list" class="space-y-4">
+                        <!-- TOTP items will be injected here -->
+                    </div>
+                    <p id="no-totp-message" class="text-center text-gray-400 py-4">No TOTP secrets saved yet.</p>
+                </div>
+
+                <!-- Logins Section -->
+                <div id="logins-section" class="hidden">
+                     <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-2xl font-bold text-white">Saved Logins</h2>
+                        <button id="add-login-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition">+ Add</button>
+                    </div>
+                    <div id="logins-list" class="space-y-4">
+                        <!-- Login items will be injected here -->
+                    </div>
+                    <p id="no-logins-message" class="text-center text-gray-400 py-4">No logins saved yet.</p>
+                </div>
+
+                <!-- Secrets Section -->
+                <div id="secrets-section" class="hidden">
+                     <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-2xl font-bold text-white">.secrets</h2>
+                        <button id="add-secret-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition">+ Add</button>
+                    </div>
+                    <div id="secrets-list" class="space-y-4">
+                        <!-- Secret items will be injected here -->
+                    </div>
+                    <p id="no-secrets-message" class="text-center text-gray-400 py-4">No secrets saved yet.</p>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- FAB for Settings -->
+    <button id="fab" class="fab bg-blue-600 hover:bg-blue-700 text-white rounded-full p-4 shadow-lg focus:outline-none hidden">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+    </button>
+
+    <!-- Modals -->
+    <div id="settings-modal" class="modal-overlay hidden">
+        <div class="bg-gray-800 w-full max-w-sm rounded-xl p-6 relative">
+            <button id="close-settings-modal" class="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl">&times;</button>
+            <h2 class="text-xl font-bold mb-6">Settings</h2>
+            <div class="space-y-4">
+                <div>
+                    <label for="secret-password" class="block text-sm font-medium mb-1">Secret Password</label>
+                    <input type="password" id="secret-password" class="form-control bg-gray-700 w-full rounded-lg px-4 py-2">
+                    <p class="text-xs text-gray-500 mt-1">Encrypted and appended to your master password.</p>
+                </div>
+                <div class="pt-4 border-t border-gray-700">
+                     <h3 class="text-lg font-semibold mb-2">Data Management</h3>
+                     <div class="flex gap-4">
+                        <button id="import-btn" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Import Vault</button>
+                        <button id="export-btn" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg">Export</button>
+                     </div>
+                     <button id="import-totp-file-btn" class="w-full mt-2 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg text-sm">Import TOTP File</button>
+                     <input type="file" id="import-file-input" class="hidden" accept=".txt,application/json">
+                     <input type="file" id="import-totp-file-input" class="hidden" accept=".txt">
+                </div>
+            </div>
+            <div class="mt-8 flex justify-end">
+                <button id="save-settings" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Save & Close</button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="add-totp-modal" class="modal-overlay hidden">
+        <div class="bg-gray-800 w-full max-w-sm rounded-xl p-6 relative">
+            <button id="close-totp-modal" class="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl">&times;</button>
+            <h2 id="totp-modal-title" class="text-xl font-bold mb-4">Add Authenticator</h2>
+            <form id="add-totp-form" class="space-y-4">
+                <input type="hidden" id="edit-totp-index" value="-1">
+                <div>
+                    <label for="totp-name" class="block text-sm font-medium mb-1">Service Name</label>
+                    <input type="text" id="totp-name" placeholder="e.g., Google" class="form-control bg-gray-700 w-full rounded-lg px-4 py-2">
+                </div>
+                <div>
+                    <label for="totp-secret" class="block text-sm font-medium mb-1">Secret Key or URI</label>
+                    <input type="text" id="totp-secret" required class="form-control bg-gray-700 w-full rounded-lg px-4 py-2">
+                </div>
+                <div class="flex justify-between items-center pt-2">
+                    <button type="button" id="delete-totp-btn" class="hidden bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
+                    <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg ml-auto">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="add-login-modal" class="modal-overlay hidden">
+        <div class="bg-gray-800 w-full max-w-md rounded-xl p-6 relative">
+            <button id="close-login-modal" class="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl">&times;</button>
+            <h2 id="login-modal-title" class="text-xl font-bold mb-4">Add Login</h2>
+            <form id="add-login-form" class="space-y-4">
+                <input type="hidden" id="edit-login-index" value="-1">
+                <div>
+                    <label for="login-label" class="block text-sm font-medium mb-1">Label</label>
+                    <input type="text" id="login-label" required placeholder="e.g., Personal Email" class="form-control bg-gray-700 w-full rounded-lg px-4 py-2">
+                </div>
+                <div class="border-t border-gray-700 pt-4">
+                    <label for="login-website" class="block text-sm font-medium mb-1">Website or App</label>
+                    <input type="text" id="login-website" class="form-control bg-gray-700 w-full rounded-lg px-4 py-2">
+                </div>
+                <div>
+                    <label for="login-password" class="block text-sm font-medium mb-1">Password</label>
+                    <input type="password" id="login-password" class="form-control bg-gray-700 w-full rounded-lg px-4 py-2">
+                </div>
+                <div class="border-t border-gray-700 pt-4">
+                    <label for="login-notes" class="block text-sm font-medium mb-1">Additional Notes</label>
+                    <textarea id="login-notes" rows="3" class="form-control bg-gray-700 w-full rounded-lg px-4 py-2"></textarea>
+                </div>
+                <div class="flex justify-between items-center pt-2">
+                    <button type="button" id="delete-login-btn" class="hidden bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
+                    <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg ml-auto">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="add-secret-modal" class="modal-overlay hidden">
+        <div class="bg-gray-800 w-full max-w-md rounded-xl p-6 relative">
+            <button id="close-secret-modal" class="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl">&times;</button>
+            <h2 id="secret-modal-title" class="text-xl font-bold mb-4">Add Secret</h2>
+            <form id="add-secret-form" class="space-y-4">
+                <input type="hidden" id="edit-secret-index" value="-1">
+                <div>
+                    <label for="secret-key" class="block text-sm font-medium mb-1">Key / Name</label>
+                    <input type="text" id="secret-key" required placeholder="e.g., API_KEY_PROD" class="form-control bg-gray-700 w-full rounded-lg px-4 py-2">
+                </div>
+                <div class="border-t border-gray-700 pt-4">
+                    <label for="secret-value" class="block text-sm font-medium mb-1">Value</label>
+                    <textarea id="secret-value" rows="4" required class="form-control bg-gray-700 w-full rounded-lg px-4 py-2 font-mono" placeholder="Secret value..."></textarea>
+                </div>
+                <div class="flex justify-between items-center pt-2">
+                    <button type="button" id="delete-secret-btn" class="hidden bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">Delete</button>
+                    <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg ml-auto">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="info-modal" class="modal-overlay hidden">
+        <div class="bg-gray-800 w-full max-w-xl rounded-xl p-6 relative max-h-[90vh] overflow-y-auto">
+            <button id="close-info-modal" class="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl">&times;</button>
+            <h2 class="text-xl font-bold mb-6">About This Vault</h2>
+            <div class="space-y-6 text-gray-300">
+                <div>
+                    <h3 class="font-semibold text-white mb-1">Your Privacy</h3>
+                    <p class="text-sm">Your privacy is paramount. Each Master Password you use creates a separate, secure vault. All data for that vault (including the Secret Password and Authenticator keys) is encrypted as a single package before being saved in your browser. This data can only be decrypted with your exact Master Password. No information is ever sent to any server.</p>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-white mb-3 border-b border-gray-700 pb-2">Core Features & Architecture</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <h4 class="font-semibold text-white mb-1 flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                                Encryption at Rest
+                            </h4>
+                            <p class="text-sm text-gray-400">All saved data is encrypted locally in your browser using strong AES encryption. Your Master Password acts as the encryption key. <strong>Without the exact Master Password, the data is entirely unreadable.</strong></p>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-white mb-1 flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-400"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
+                                The Visual Hash (Identicon)
+                            </h4>
+                            <p class="text-sm text-gray-400">As you type your Master Password, a unique geometric image appears. This helps you visually confirm you've typed your password correctly without having to click a "show password" button.</p>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-white mb-1 flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-400"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                                Stateless Password Generation
+                            </h4>
+                            <p class="text-sm text-gray-400">The Generator doesn't actually save your generated passwords. Instead, it mathematically computes them on the fly by hashing your Master Password and the Domain Name. If you lose your device, you can still generate the exact same passwords elsewhere.</p>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-white mb-1 flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-400"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                                Zero-Knowledge Architecture
+                            </h4>
+                            <p class="text-sm text-gray-400">This application runs entirely in your browser. No passwords, credentials, or generated codes are ever sent to a server. You are completely in control of your data backups and exports.</p>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-white mb-1 flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-pink-400"><path d="M16 21v-2a4 4 0 0 0-4-4H5c-2.2 0-4 1.8-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="18" y1="8" x2="23" y2="13"></line><line x1="23" y1="8" x2="18" y2="13"></line></svg>
+                                No Accounts or Usernames
+                            </h4>
+                            <p class="text-sm text-gray-400">To maximize privacy and minimize data collection, no accounts or usernames are used anywhere within the application. Your vault is tied exclusively to the Master Password you provide, keeping your identity completely detached from your stored data.</p>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-white mb-1">How It Works</h3>
+                    <p class="text-sm">This tool combines a web-based re-implementation of the SuperGenPass (SGP) password generation philosophy with a standard TOTP authenticator, all within a secure, multi-user vault.</p>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-white mb-1">Learn More</h3>
+                    <ul class="list-disc list-inside text-sm mt-2 space-y-1">
+                        <li><a href="https://chriszarate.github.io/supergenpass/" target="_blank" rel="noopener" class="text-blue-400 hover:underline">Original SuperGenPass Project</a></li>
+                        <li><a href="https://github.com/chriszarate/supergenpass/wiki/FAQ" target="_blank" rel="noopener" class="text-blue-400 hover:underline">SuperGenPass FAQ</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // --- Constants ---
+    const VAULT_STORAGE_KEY = 'passwordVault';
+
+    // --- Global State ---
+    let sessionMasterPassword = null;
+    let sessionUserHash = null;
+    let sessionUserData = {}; // In-memory store of the current user's decrypted data
+    let totpUpdateInterval = null;
+
+    // --- DOM Elements ---
+    const unlockScreen = document.getElementById('unlock-screen');
+    const mainApp = document.getElementById('main-app');
+    const unlockForm = document.getElementById('unlock-form');
+    const unlockMasterPasswordInput = document.getElementById('unlock-master-password');
+    const unlockError = document.getElementById('unlock-error');
+    const passwordIdenticon = document.getElementById('password-identicon');
+    const passwordKey = document.getElementById('password-key');
+    const unlockInfoBtn = document.getElementById('unlock-info-btn');
+    const lockBtn = document.getElementById('lock-btn');
+    const passwordForm = document.getElementById('password-form');
+    const domainInput = document.getElementById('domain');
+    const lengthInput = document.getElementById('length');
+    const algorithmSelect = document.getElementById('algorithm');
+    const resultContainer = document.getElementById('result-container');
+    const resultInput = document.getElementById('result');
+    const copyBtn = document.getElementById('copy-btn');
+    const fab = document.getElementById('fab');
+    // Tabs
+    const showTotpTab = document.getElementById('show-totp-tab');
+    const showLoginsTab = document.getElementById('show-logins-tab');
+    const showSecretsTab = document.getElementById('show-secrets-tab');
+    const totpSection = document.getElementById('totp-section');
+    const loginsSection = document.getElementById('logins-section');
+    const secretsSection = document.getElementById('secrets-section');
+    // Modals
+    const settingsModal = document.getElementById('settings-modal');
+    const closeSettingsModalBtn = document.getElementById('close-settings-modal');
+    const saveSettingsBtn = document.getElementById('save-settings');
+    const secretPasswordInput = document.getElementById('secret-password');
+    const addTotpModal = document.getElementById('add-totp-modal');
+    const closeTotpModalBtn = document.getElementById('close-totp-modal');
+    const addLoginModal = document.getElementById('add-login-modal');
+    const closeLoginModalBtn = document.getElementById('close-login-modal');
+    const addSecretModal = document.getElementById('add-secret-modal');
+    const closeSecretModalBtn = document.getElementById('close-secret-modal');
+    const infoModal = document.getElementById('info-modal');
+    const infoIcon = document.getElementById('info-icon');
+    const closeInfoModalBtn = document.getElementById('close-info-modal');
+    const exportBtn = document.getElementById('export-btn');
+    const importBtn = document.getElementById('import-btn');
+    const importFileInput = document.getElementById('import-file-input');
+    const importTotpFileBtn = document.getElementById('import-totp-file-btn');
+    const importTotpFileInput = document.getElementById('import-totp-file-input');
+    
+    // --- Core Logic (Storage, Encryption, Hashing) ---
+
+    const getUserHash = (password) => CryptoJS.SHA256(password).toString();
+    const getMasterVault = () => { try { return JSON.parse(localStorage.getItem(VAULT_STORAGE_KEY) || '{}'); } catch (e) { return {}; } };
+    const saveMasterVault = (vault) => localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(vault));
+
+    const saveCurrentUserData = () => {
+        if (!sessionMasterPassword || !sessionUserHash) return;
+        const masterVault = getMasterVault();
+        masterVault[sessionUserHash] = CryptoJS.AES.encrypt(JSON.stringify(sessionUserData), sessionMasterPassword).toString();
+        saveMasterVault(masterVault);
+    };
+
+    // --- Password Generation Logic ---
+    const bufferToBase64 = (b) => window.btoa(String.fromCharCode(...new Uint8Array(b)));
+    const wordToBuffer = (wa) => { const b = new ArrayBuffer(wa.sigBytes); const v = new Uint8Array(b); for (let i = 0; i < wa.sigBytes; i++) { v[i] = (wa.words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff; } return b; };
+    async function getNextHash(str, algo) { let hb; if (algo === 'sha512') { hb = await crypto.subtle.digest('SHA-512', new TextEncoder().encode(str)); } else { hb = wordToBuffer(CryptoJS.MD5(str)); } return bufferToBase64(hb).replaceAll('+', '9').replaceAll('/', '8').replaceAll('=', 'A'); }
+    const validatePassword = (p) => p && (p[0] >= 'a' && p[0] <= 'z') && /[A-Z]/.test(p) && /\d/.test(p);
+    
+    // --- App Flow (Lock/Unlock) ---
+
+    function lockApp() {
+        sessionMasterPassword = null;
+        sessionUserHash = null;
+        sessionUserData = {};
+        clearInterval(totpUpdateInterval);
+        mainApp.classList.add('hidden');
+        fab.classList.add('hidden');
+        unlockScreen.classList.remove('hidden');
+        unlockMasterPasswordInput.value = '';
+        unlockError.classList.add('hidden');
+        passwordKey.classList.remove('hidden');
+        passwordIdenticon.classList.add('hidden');
+    }
+
+    function unlockApp(event) {
+        event.preventDefault();
+        const password = unlockMasterPasswordInput.value;
+        if (!password) return;
+
+        const userHash = getUserHash(password);
+        const masterVault = getMasterVault();
+        const encryptedUserData = masterVault[userHash];
+        let decryptedData = null;
+
+        if (encryptedUserData) {
+            try {
+                const bytes = CryptoJS.AES.decrypt(encryptedUserData, password);
+                const decryptedString = bytes.toString(CryptoJS.enc.Utf8);
+                if (decryptedString) decryptedData = JSON.parse(decryptedString);
+            } catch (e) { /* Decryption failed */ }
+        } else {
+            decryptedData = { secret: '', totps: [], logins: [] };
+        }
+
+        if (decryptedData) {
+            sessionMasterPassword = password;
+            sessionUserHash = userHash;
+            sessionUserData = decryptedData;
+            unlockScreen.classList.add('hidden');
+            mainApp.classList.remove('hidden');
+            fab.classList.remove('hidden');
+            loadAndRenderAllData();
+        } else {
+            unlockError.classList.remove('hidden');
+        }
+    }
+
+    function updatePasswordIdenticon() {
+        const password = unlockMasterPasswordInput.value;
+        if (password) {
+            passwordKey.classList.add('hidden');
+            passwordIdenticon.classList.remove('hidden');
+            jdenticon.update(passwordIdenticon, password);
+        } else {
+            passwordKey.classList.remove('hidden');
+            passwordIdenticon.classList.add('hidden');
+        }
+    }
+    
+    function loadAndRenderAllData() {
+        renderTotpList();
+        renderLoginsList();
+        renderSecretsList();
+        startTotpUpdater();
+    }
+
+    // --- Tab Switching ---
+    function switchTab(tabToShow) {
+        totpSection.classList.add('hidden');
+        loginsSection.classList.add('hidden');
+        secretsSection.classList.add('hidden');
+        showTotpTab.classList.remove('active');
+        showLoginsTab.classList.remove('active');
+        showSecretsTab.classList.remove('active');
+
+        if (tabToShow === 'totp') {
+            totpSection.classList.remove('hidden');
+            showTotpTab.classList.add('active');
+        } else if (tabToShow === 'logins') {
+            loginsSection.classList.remove('hidden');
+            showLoginsTab.classList.add('active');
+        } else if (tabToShow === 'secrets') {
+            secretsSection.classList.remove('hidden');
+            showSecretsTab.classList.add('active');
+        }
+    }
+
+    // --- TOTP Logic ---
+    function renderTotpList() {
+        const totpListEl = document.getElementById('totp-list');
+        const noTotpMessageEl = document.getElementById('no-totp-message');
+        const globalTimerEl = document.getElementById('global-totp-timer');
+        totpListEl.innerHTML = '';
+        const totps = sessionUserData.totps || [];
+        
+        if (noTotpMessageEl) noTotpMessageEl.classList.toggle('hidden', totps.length > 0);
+        if (globalTimerEl) globalTimerEl.classList.toggle('hidden', totps.length === 0);
+        
+        totps.forEach((item, index) => {
+            const totpItem = document.createElement('div');
+            totpItem.className = 'bg-gray-700 p-4 rounded-lg flex items-center gap-4';
+            totpItem.innerHTML = `<div class="flex-grow"><p class="font-semibold text-white">${item.name}</p><p class="text-2xl font-mono tracking-wider text-cyan-400" data-totp-code="${index}">000000</p></div><button data-copy-totp="${index}" class="text-gray-400 hover:text-white p-2" title="Copy Code"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button><button data-edit-totp="${index}" class="text-gray-400 hover:text-blue-500 p-2" title="Edit"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>`;
+            totpListEl.appendChild(totpItem);
+        });
+    }
+    
+    function startTotpUpdater() {
+        clearInterval(totpUpdateInterval);
+        const globalProgressEl = document.getElementById('global-totp-progress');
+        const updateCodes = () => {
+            const epoch = Math.floor(Date.now() / 1000);
+            const countdown = 30 - (epoch % 30);
+            const progress = (countdown / 30) * 100;
+            
+            if (globalProgressEl) globalProgressEl.style.width = `${progress}%`;
+            
+            (sessionUserData.totps || []).forEach((item, index) => {
+                try {
+                    const totp = new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(item.secret) });
+                    const codeEl = document.querySelector(`[data-totp-code="${index}"]`);
+                    if(codeEl) codeEl.textContent = totp.generate();
+                } catch(e) { 
+                    console.error(`Failed to generate TOTP for "${item.name}" with secret "${item.secret}":`, e);
+                    const codeEl = document.querySelector(`[data-totp-code="${index}"]`);
+                    if(codeEl) codeEl.textContent = "Invalid";
+                }
+            });
+        };
+        updateCodes();
+        totpUpdateInterval = setInterval(updateCodes, 1000);
+    }
+    
+    document.getElementById('add-totp-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const nameInput = document.getElementById('totp-name');
+        const secretInput = document.getElementById('totp-secret');
+        let name = nameInput.value.trim();
+        let secret = secretInput.value.trim();
+        const editIndex = parseInt(document.getElementById('edit-totp-index').value, 10);
+        
+        if (!secret) return; 
+
+        if (secret.toLowerCase().startsWith('otpauth://')) {
+            try {
+                const parsedUri = OTPAuth.URI.parse(secret);
+                if (!name) name = parsedUri.issuer ? `${parsedUri.issuer} (${parsedUri.label})` : parsedUri.label;
+                secret = parsedUri.secret.base32;
+            } catch (e) {
+                alert('The provided text looks like an otpauth URI, but it could not be parsed.');
+                console.error("Failed to parse otpauth URI:", e);
+                return;
+            }
+        } else {
+            secret = secret.toUpperCase().replace(/[^A-Z2-7=]/g, '');
+        }
+
+        if (!name) name = "Untitled";
+        if (!name || !secret) { alert("Could not process the authenticator information."); return; }
+
+        sessionUserData.totps = sessionUserData.totps || [];
+        
+        if (editIndex >= 0) {
+            sessionUserData.totps[editIndex] = { name, secret };
+        } else {
+            sessionUserData.totps.push({ name, secret });
+        }
+        
+        saveCurrentUserData();
+        renderTotpList();
+        startTotpUpdater();
+        
+        document.getElementById('add-totp-modal').classList.add('hidden');
+    });
+
+    document.getElementById('totp-list').addEventListener('click', (e) => {
+        const copyBtn = e.target.closest('[data-copy-totp]');
+        if (copyBtn) {
+            const code = copyBtn.parentElement.querySelector('[data-totp-code]').textContent;
+            navigator.clipboard.writeText(code);
+        }
+        
+        const editBtn = e.target.closest('[data-edit-totp]');
+        if (editBtn) {
+            const index = parseInt(editBtn.dataset.editTotp, 10);
+            const item = sessionUserData.totps[index];
+            document.getElementById('totp-name').value = item.name;
+            document.getElementById('totp-secret').value = item.secret;
+            document.getElementById('edit-totp-index').value = index;
+            document.getElementById('totp-modal-title').textContent = 'Edit Authenticator';
+            document.getElementById('delete-totp-btn').classList.remove('hidden');
+            addTotpModal.classList.remove('hidden');
+        }
+    });
+
+    // --- Logins Logic ---
+    function renderLoginsList() {
+        const loginsListEl = document.getElementById('logins-list');
+        const noLoginsMessageEl = document.getElementById('no-logins-message');
+        loginsListEl.innerHTML = '';
+        const logins = sessionUserData.logins || [];
+
+        if(noLoginsMessageEl) noLoginsMessageEl.classList.toggle('hidden', logins.length > 0);
+
+        logins.forEach((item, index) => {
+            const loginItem = document.createElement('div');
+            loginItem.className = 'bg-gray-700 p-4 rounded-lg';
+            loginItem.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="font-semibold text-white text-lg">${item.label}</p>
+                        ${item.website ? `<a href="${item.website.startsWith('http') ? item.website : 'https://' + item.website}" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-400 hover:text-blue-300 hover:underline block">${item.website}</a>` : ''}
+                    </div>
+                    <button data-edit-login="${index}" class="text-gray-400 hover:text-blue-500 p-1" title="Edit">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    </button>
+                </div>
+                <div class="mt-4 space-y-2">
+                    ${item.password ? `<div class="flex items-center justify-between"><span class="text-sm text-gray-300">Password:</span><div class="flex items-center gap-2"><input type="password" value="${item.password}" readonly class="bg-transparent font-mono text-sm w-24 text-right" data-login-password-field="${index}"><button data-toggle-login-pass="${index}" class="text-gray-400 hover:text-white" title="Show/Hide"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button><button data-copy-login-pass="${index}" class="text-gray-400 hover:text-white" title="Copy Password"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button></div></div>` : ''}
+                    ${item.notes ? `<div class="pt-2 border-t border-gray-600"><p class="text-sm text-gray-300 whitespace-pre-wrap">${item.notes}</p></div>` : ''}
+                </div>
+            `;
+            loginsListEl.appendChild(loginItem);
+        });
+    }
+
+    document.getElementById('add-login-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const label = document.getElementById('login-label').value.trim();
+        const website = document.getElementById('login-website').value.trim();
+        const password = document.getElementById('login-password').value;
+        const notes = document.getElementById('login-notes').value.trim();
+        const editIndex = parseInt(document.getElementById('edit-login-index').value, 10);
+        
+        if (!label) { alert("Label is required."); return; }
+        if (!website && !password && !notes) { alert("Please fill in either the website/credentials or the notes field."); return; }
+
+        const newLogin = { label, website, password, notes };
+
+        sessionUserData.logins = sessionUserData.logins || [];
+        
+        if (editIndex >= 0) {
+            sessionUserData.logins[editIndex] = newLogin;
+        } else {
+            sessionUserData.logins.push(newLogin);
+        }
+        
+        saveCurrentUserData();
+        renderLoginsList();
+
+        document.getElementById('add-login-form').reset();
+        addLoginModal.classList.add('hidden');
+    });
+
+    document.getElementById('logins-list').addEventListener('click', e => {
+        const editBtn = e.target.closest('[data-edit-login]');
+        if (editBtn) {
+            const index = parseInt(editBtn.dataset.editLogin, 10);
+            const item = sessionUserData.logins[index];
+            document.getElementById('login-label').value = item.label;
+            document.getElementById('login-website').value = item.website || '';
+            document.getElementById('login-password').value = item.password || '';
+            document.getElementById('login-notes').value = item.notes || '';
+            document.getElementById('edit-login-index').value = index;
+            document.getElementById('login-modal-title').textContent = 'Edit Login';
+            document.getElementById('delete-login-btn').classList.remove('hidden');
+            addLoginModal.classList.remove('hidden');
+        }
+        const copyPassBtn = e.target.closest('[data-copy-login-pass]');
+        if (copyPassBtn) {
+            const index = parseInt(copyPassBtn.dataset.copyLoginPass, 10);
+            navigator.clipboard.writeText(sessionUserData.logins[index].password);
+        }
+        const togglePassBtn = e.target.closest('[data-toggle-login-pass]');
+        if (togglePassBtn) {
+            const index = parseInt(togglePassBtn.dataset.toggleLoginPass, 10);
+            const passField = document.querySelector(`[data-login-password-field="${index}"]`);
+            if (passField) passField.type = passField.type === 'password' ? 'text' : 'password';
+        }
+    });
+
+    // Delete Buttons in Modals
+    document.getElementById('delete-totp-btn').addEventListener('click', () => {
+        const index = parseInt(document.getElementById('edit-totp-index').value, 10);
+        if (index >= 0) {
+            if (confirm(`Are you sure you want to delete "${sessionUserData.totps[index].name}"?`)) {
+                sessionUserData.totps.splice(index, 1);
+                saveCurrentUserData();
+                renderTotpList();
+                addTotpModal.classList.add('hidden');
+            }
+        }
+    });
+
+    document.getElementById('delete-login-btn').addEventListener('click', () => {
+        const index = parseInt(document.getElementById('edit-login-index').value, 10);
+        if (index >= 0) {
+            if (confirm(`Are you sure you want to delete "${sessionUserData.logins[index].label}"?`)) {
+                sessionUserData.logins.splice(index, 1);
+                saveCurrentUserData();
+                renderLoginsList();
+                addLoginModal.classList.add('hidden');
+            }
+        }
+    });
+
+    // --- Secrets Logic ---
+    function escapeHTML(str) {
+        return (str || '').replace(/[&<>'"]/g, tag => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'}[tag]));
+    }
+
+    function renderSecretsList() {
+        const secretsListEl = document.getElementById('secrets-list');
+        const noSecretsMessageEl = document.getElementById('no-secrets-message');
+        secretsListEl.innerHTML = '';
+        const secrets = sessionUserData.secrets || [];
+
+        if(noSecretsMessageEl) noSecretsMessageEl.classList.toggle('hidden', secrets.length > 0);
+
+        secrets.forEach((item, index) => {
+            const secretItem = document.createElement('div');
+            secretItem.className = 'bg-gray-700 p-4 rounded-lg';
+            secretItem.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="font-semibold text-white text-lg break-all">${escapeHTML(item.key)}</p>
+                    </div>
+                    <button data-edit-secret="${index}" class="text-gray-400 hover:text-blue-500 p-1 flex-shrink-0" title="Edit">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    </button>
+                </div>
+                <div class="mt-4 space-y-2">
+                    <div class="flex items-start justify-between">
+                        <span class="text-sm text-gray-300 pt-1">Value:</span>
+                        <div class="flex items-start gap-2 w-3/4 justify-end">
+                            <input type="password" value="**********" readonly class="bg-transparent font-mono text-sm w-full text-right outline-none pointer-events-none" data-secret-mask="${index}">
+                            <textarea readonly class="bg-transparent font-mono text-sm w-full text-right resize-none outline-none hidden" rows="3" data-secret-value-field="${index}">${escapeHTML(item.value)}</textarea>
+                            <button data-toggle-secret-value="${index}" class="text-gray-400 hover:text-white pt-1 flex-shrink-0" title="Show/Hide"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+                            <button data-copy-secret-value="${index}" class="text-gray-400 hover:text-white pt-1 flex-shrink-0" title="Copy Value"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            secretsListEl.appendChild(secretItem);
+        });
+    }
+
+    document.getElementById('add-secret-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const key = document.getElementById('secret-key').value.trim();
+        const value = document.getElementById('secret-value').value;
+        const editIndex = parseInt(document.getElementById('edit-secret-index').value, 10);
+        
+        if (!key) { alert("Key is required."); return; }
+
+        const newSecret = { key, value };
+
+        sessionUserData.secrets = sessionUserData.secrets || [];
+        
+        if (editIndex >= 0) {
+            sessionUserData.secrets[editIndex] = newSecret;
+        } else {
+            sessionUserData.secrets.push(newSecret);
+        }
+        
+        saveCurrentUserData();
+        renderSecretsList();
+
+        document.getElementById('add-secret-form').reset();
+        addSecretModal.classList.add('hidden');
+    });
+
+    document.getElementById('secrets-list').addEventListener('click', e => {
+        const editBtn = e.target.closest('[data-edit-secret]');
+        if (editBtn) {
+            const index = parseInt(editBtn.dataset.editSecret, 10);
+            const item = sessionUserData.secrets[index];
+            document.getElementById('secret-key').value = item.key;
+            document.getElementById('secret-value').value = item.value || '';
+            document.getElementById('edit-secret-index').value = index;
+            document.getElementById('secret-modal-title').textContent = 'Edit Secret';
+            document.getElementById('delete-secret-btn').classList.remove('hidden');
+            addSecretModal.classList.remove('hidden');
+        }
+        const copyValBtn = e.target.closest('[data-copy-secret-value]');
+        if (copyValBtn) {
+            const index = parseInt(copyValBtn.dataset.copySecretValue, 10);
+            navigator.clipboard.writeText(sessionUserData.secrets[index].value);
+        }
+        const toggleValBtn = e.target.closest('[data-toggle-secret-value]');
+        if (toggleValBtn) {
+            const index = parseInt(toggleValBtn.dataset.toggleSecretValue, 10);
+            const passField = document.querySelector(`[data-secret-value-field="${index}"]`);
+            const maskField = document.querySelector(`[data-secret-mask="${index}"]`);
+            if (passField && maskField) {
+                if (passField.classList.contains('hidden')) {
+                    passField.classList.remove('hidden');
+                    maskField.classList.add('hidden');
+                } else {
+                    passField.classList.add('hidden');
+                    maskField.classList.remove('hidden');
+                }
+            }
+        }
+    });
+
+    document.getElementById('delete-secret-btn').addEventListener('click', () => {
+        const index = parseInt(document.getElementById('edit-secret-index').value, 10);
+        if (index >= 0) {
+            if (confirm(`Are you sure you want to delete "${sessionUserData.secrets[index].key}"?`)) {
+                sessionUserData.secrets.splice(index, 1);
+                saveCurrentUserData();
+                renderSecretsList();
+                addSecretModal.classList.add('hidden');
+            }
+        }
+    });
+
+    // --- Password Generator Logic ---
+    passwordForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        const masterPassword = sessionMasterPassword + (sessionUserData.secret || '');
+        const domain = domainInput.value.toLowerCase();
+        const length = parseInt(lengthInput.value, 10);
+        const algorithm = algorithmSelect.value;
+        
+        setTimeout(async () => {
+            let hash = `${masterPassword}:${domain}`;
+            for (let i = 0; i < 5000; i++) {
+                hash = await getNextHash(hash, algorithm);
+                if (i >= 9) {
+                    const candidate = hash.substring(0, length);
+                    if (validatePassword(candidate)) {
+                        resultInput.value = candidate;
+                        resultContainer.classList.remove('hidden');
+                        return;
+                    }
+                }
+            }
+            resultInput.value = "Failed to generate valid password.";
+            resultContainer.classList.remove('hidden');
+        }, 50);
+    });
+    
+    // --- Data Management (Import/Export) ---
+    exportBtn.addEventListener('click', () => {
+        const encryptedData = CryptoJS.AES.encrypt(JSON.stringify(sessionUserData), sessionMasterPassword).toString();
+        const blob = new Blob([encryptedData], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `vault-backup-${new Date().toISOString().slice(0,10)}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
+
+    importBtn.addEventListener('click', () => importFileInput.click());
+
+    importFileInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const encryptedData = e.target.result;
+            const importPassword = prompt("Please enter the Master Password for the backup file:");
+            if (!importPassword) return;
+
+            try {
+                const bytes = CryptoJS.AES.decrypt(encryptedData, importPassword);
+                const decryptedString = bytes.toString(CryptoJS.enc.Utf8);
+                const importedData = JSON.parse(decryptedString);
+
+                if (importedData && typeof importedData === 'object') {
+                    if (confirm("Backup decrypted. Merge with current vault? (Duplicates will be ignored).")) {
+                        let totpAdded = 0;
+                        let loginsAdded = 0;
+
+                        if(importedData.secret) sessionUserData.secret = importedData.secret;
+
+                        // Merge TOTPs
+                        sessionUserData.totps = sessionUserData.totps || [];
+                        const existingTotpSecrets = new Set(sessionUserData.totps.map(item => item.secret));
+                        if(importedData.totps && Array.isArray(importedData.totps)) {
+                            importedData.totps.forEach(item => {
+                                if(item.secret && !existingTotpSecrets.has(item.secret)) {
+                                    sessionUserData.totps.push(item);
+                                    totpAdded++;
+                                }
+                            });
+                        }
+                        
+                        // Merge Logins
+                        sessionUserData.logins = sessionUserData.logins || [];
+                        // Modified to check label+website only since usernames are gone
+                        const existingLogins = new Set(sessionUserData.logins.map(l => `${l.label}|${l.website}`));
+                        if (importedData.logins && Array.isArray(importedData.logins)) {
+                            importedData.logins.forEach(item => {
+                                const uniqueKey = `${item.label}|${item.website}`;
+                                if (item.label && !existingLogins.has(uniqueKey)) {
+                                    // Make sure we strip any legacy username upon import
+                                    const { username, ...loginWithoutUsername } = item;
+                                    sessionUserData.logins.push(loginWithoutUsername);
+                                    loginsAdded++;
+                                }
+                            });
+                        }
+
+                        // Merge Secrets
+                        let secretsAdded = 0;
+                        sessionUserData.secrets = sessionUserData.secrets || [];
+                        const existingSecrets = new Set(sessionUserData.secrets.map(s => s.key));
+                        if (importedData.secrets && Array.isArray(importedData.secrets)) {
+                            importedData.secrets.forEach(item => {
+                                if (item.key && !existingSecrets.has(item.key)) {
+                                    sessionUserData.secrets.push({ key: item.key, value: item.value || '' });
+                                    secretsAdded++;
+                                }
+                            });
+                        }
+
+                        saveCurrentUserData();
+                        loadAndRenderAllData();
+                        settingsModal.classList.add('hidden');
+                        alert(`Merge complete. Added ${totpAdded} TOTP secret(s), ${loginsAdded} login(s), and ${secretsAdded} secret(s).`);
+                    }
+                } else { throw new Error("Invalid data format."); }
+            } catch (err) {
+                alert("Decryption failed. Incorrect password or corrupt file.");
+            } finally {
+                importFileInput.value = ''; // Reset file input
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    importTotpFileBtn.addEventListener('click', () => importTotpFileInput.click());
+
+    importTotpFileInput.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const fileContent = e.target.result;
+            const lines = fileContent.split('\n').map(line => line.trim()).filter(line => line);
+            
+            let successCount = 0;
+            let failCount = 0;
+            const errors = [];
+            
+            sessionUserData.totps = sessionUserData.totps || [];
+            const existingSecrets = new Set(sessionUserData.totps.map(item => item.secret));
+            
+            lines.forEach((line, idx) => {
+                if (!line.toLowerCase().startsWith('otpauth://')) return;
+                
+                try {
+                    const parsedUri = OTPAuth.URI.parse(line);
+                    const secret = parsedUri.secret.base32;
+                    
+                    if (existingSecrets.has(secret)) return;
+                    
+                    let name = parsedUri.label || 'Imported';
+                    if (parsedUri.issuer && !name.includes(parsedUri.issuer)) {
+                        name = `${parsedUri.issuer} (${name})`;
+                    }
+                    
+                    sessionUserData.totps.push({ name, secret });
+                    existingSecrets.add(secret);
+                    successCount++;
+                } catch (err) {
+                    failCount++;
+                    errors.push(`Line ${idx + 1}: ${err.message}`);
+                }
+            });
+            
+            if (successCount > 0) {
+                saveCurrentUserData();
+                renderTotpList();
+                startTotpUpdater();
+            }
+            
+            settingsModal.classList.add('hidden');
+            
+            let message = `Import complete:\n${successCount} TOTP(s) added`;
+            if (failCount > 0) {
+                message += `\n${failCount} failed to import`;
+                if (errors.length > 0 && errors.length <= 5) {
+                    message += `\n\nErrors:\n${errors.join('\n')}`;
+                }
+            }
+            alert(message);
+            importTotpFileInput.value = '';
+        };
+        reader.readAsText(file);
+    });
+
+    // --- Modal Logic & Event Listeners ---
+    function openSettingsModal() { secretPasswordInput.value = sessionUserData.secret || ''; settingsModal.classList.remove('hidden'); }
+    function saveAndCloseSettings() { sessionUserData.secret = secretPasswordInput.value; saveCurrentUserData(); settingsModal.classList.add('hidden'); }
+
+    unlockForm.addEventListener('submit', unlockApp);
+    unlockMasterPasswordInput.addEventListener('input', updatePasswordIdenticon);
+    unlockInfoBtn.addEventListener('click', () => infoModal.classList.remove('hidden'));
+    lockBtn.addEventListener('click', lockApp);
+    copyBtn.addEventListener('click', () => navigator.clipboard.writeText(resultInput.value));
+    fab.addEventListener('click', openSettingsModal);
+    closeSettingsModalBtn.addEventListener('click', () => settingsModal.classList.add('hidden'));
+    saveSettingsBtn.addEventListener('click', saveAndCloseSettings);
+    
+    // Add Modals Listeners
+    document.getElementById('add-totp-btn').addEventListener('click', () => {
+        document.getElementById('add-totp-form').reset();
+        document.getElementById('edit-totp-index').value = -1;
+        document.getElementById('totp-modal-title').textContent = 'Add Authenticator';
+        document.getElementById('delete-totp-btn').classList.add('hidden');
+        addTotpModal.classList.remove('hidden');
+    });
+    closeTotpModalBtn.addEventListener('click', () => addTotpModal.classList.add('hidden'));
+
+    document.getElementById('add-login-btn').addEventListener('click', () => {
+        document.getElementById('add-login-form').reset();
+        document.getElementById('edit-login-index').value = -1;
+        document.getElementById('login-modal-title').textContent = 'Add Login';
+        document.getElementById('delete-login-btn').classList.add('hidden');
+        addLoginModal.classList.remove('hidden');
+    });
+    closeLoginModalBtn.addEventListener('click', () => addLoginModal.classList.add('hidden'));
+
+    document.getElementById('add-secret-btn').addEventListener('click', () => {
+        document.getElementById('add-secret-form').reset();
+        document.getElementById('edit-secret-index').value = -1;
+        document.getElementById('secret-modal-title').textContent = 'Add Secret';
+        document.getElementById('delete-secret-btn').classList.add('hidden');
+        addSecretModal.classList.remove('hidden');
+    });
+    closeSecretModalBtn.addEventListener('click', () => addSecretModal.classList.add('hidden'));
+
+    infoIcon.addEventListener('click', () => infoModal.classList.remove('hidden'));
+    closeInfoModalBtn.addEventListener('click', () => infoModal.classList.add('hidden'));
+    [settingsModal, addTotpModal, addLoginModal, addSecretModal, infoModal].forEach(m => m.addEventListener('click', (e) => e.target === m && m.classList.add('hidden')));
+    
+    // Tab Listeners
+    showTotpTab.addEventListener('click', () => switchTab('totp'));
+    showLoginsTab.addEventListener('click', () => switchTab('logins'));
+    showSecretsTab.addEventListener('click', () => switchTab('secrets'));
+
+    </script>
+</body>
+</html>

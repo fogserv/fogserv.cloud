@@ -1,0 +1,40 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: flux2
+  namespace: kube-system
+spec:
+  repo: https://fluxcd-community.github.io/helm-charts
+  chart: flux2
+  targetNamespace: flux-system
+  createNamespace: true
+  valuesContent: |-
+    imageReflectionController:
+      create: false
+    imageAutomationController:
+      create: false
+---
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: GitRepository
+metadata:
+  name: homelab-repo
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: http://forgejo.forgejo.svc.cluster.local:3000/gitops/homelab.git
+  ref:
+    branch: main
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+kind: Kustomization
+metadata:
+  name: homelab-core
+  namespace: flux-system
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: homelab-repo
+  path: ./core
+  prune: true
+  wait: true

@@ -1,0 +1,20 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: seaweedfs
+  namespace: kube-system
+spec:
+  repo: https://seaweedfs.github.io/seaweedfs/helm
+  chart: seaweedfs
+  targetNamespace: seaweedfs-system
+  createNamespace: true
+  valuesContent: |-
+    master:
+      enabled: true
+    volume:
+      enabled: true
+      dataVolumeClass: longhorn # Tier 2 storage atop Tier 1 Block
+    filer:
+      enabled: true
+    s3:
+      enabled: true

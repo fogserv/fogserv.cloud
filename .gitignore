@@ -1,0 +1,36 @@
+# Environment Variables - NEVER commit sensitive .env files
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.production
+
+# Dependencies
+node_modules/
+dist/
+build/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Database
+dev.db
+dev.db-journal
+prisma/migrations/
+
+# Build outputs
+.next/
+.turbo/
+out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+Caddyfile

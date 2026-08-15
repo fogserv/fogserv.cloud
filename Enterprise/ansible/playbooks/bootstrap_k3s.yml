@@ -1,0 +1,25 @@
+---
+- name: Bootstrap K3s Local Cloud Platform
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Update apt cache and upgrade system
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Install prerequisite packages (curl, git, open-iscsi for Longhorn)
+      apt:
+        name: [curl, git, open-iscsi, nfs-common]
+        state: present
+
+    - name: Enable and start iscsid for Longhorn
+      systemd:
+        name: iscsid
+        enabled: yes
+        state: started
+
+    - name: Install K3s (Local Master)
+      shell: curl -sfL https://get.k3s.io | sh -s - server --cluster-init
+      args:
+        creates: /usr/local/bin/k3s

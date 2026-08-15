@@ -1,0 +1,14 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: caddy-ingress-controller
+  namespace: kube-system
+spec:
+  repo: https://caddyserver.github.io/ingress/
+  chart: caddy-ingress-controller
+  targetNamespace: caddy-system
+  createNamespace: true
+  valuesContent: |-
+    ingressController:
+      config:
+        email: admin@shire.one
